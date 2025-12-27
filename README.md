@@ -17,6 +17,10 @@ AWS Access: Enable Anthropic Claude 3.5 Sonnet in Bedrock Model Access.
 
 Local Env: Python 3.13+ and configured AWS CLI.
 
+Boto3 installation or upgrade: Install boto3 on local
+
+Bash
+pip install --upgrade boto3
 
 2. Deploy
 
