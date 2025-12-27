@@ -56,9 +56,12 @@ Knowledge Base (S3): A centralized checklist file that acts as the "ground truth
 
 Inference (AWS Bedrock): Claude 3.5 Sonnet analyzes the code against the checklist and generates a structured JSON report.
 
-![E66C8BAD-5CA0-4DE5-AE59-BF48E77800D8](https://github.com/user-attachments/assets/97e8a3c5-921f-4b09-ab8d-b87b067aa7a1)
+
 
 Project Structure
+
+![E66C8BAD-5CA0-4DE5-AE59-BF48E77800D8](https://github.com/user-attachments/assets/97e8a3c5-921f-4b09-ab8d-b87b067aa7a1)
+
 |—— review.py                                        # Local Orchestrator (entry point)
 |—— infra/
 |	    |——   cloudformation.yml                       # IAM Roles, Lambda, S3, and Sample Glue Jobs
