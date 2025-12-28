@@ -1,4 +1,3 @@
-# deploy.py
 import boto3
 import sys
 import time
