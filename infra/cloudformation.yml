@@ -1,0 +1,209 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Infrastructure'
+
+Resources:
+
+  # 1. Role for the Lambda Function
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: pooja-test-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [lambda.amazonaws.com]
+            Action: ['sts:AssumeRole']
+      Policies:
+        - PolicyName: LambdaGenAIPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - glue:GetJob
+                  - s3:GetObject
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: '*'
+
+  GlueExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [glue.amazonaws.com]
+            Action: ['sts:AssumeRole']
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole # arn for managed service role
+
+  ProjectBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      # AWS will generate a unique name if you don't specify one
+      BucketName: !Sub "pc-test-${AWS::AccountId}-${AWS::Region}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  # 2. Relevant Glue Job 1 (Ingestion)
+  RawCustomerDataJob:
+    Type: AWS::Glue::Job
+    Properties:
+      Name: raw_customer_data_gluejob
+      Role: !GetAtt GlueExecutionRole.Arn
+      Command:
+        Name: glueetl
+        ScriptLocation: !Sub "s3://${ProjectBucket}/scripts/raw_customer_data.py"
+      GlueVersion: "4.0"
+
+  # 3. Relevant Glue Job 2 (Cleaning)
+  CuratedCustomerDataJob:
+    Type: AWS::Glue::Job
+    Properties:
+      Name: curated_customer_data_gluejob
+      Role: !GetAtt GlueExecutionRole.Arn
+      Command:
+        Name: glueetl
+        ScriptLocation: !Sub "s3://${ProjectBucket}/scripts/curated_customer_data.py"
+      DefaultArguments:
+        "--ACCESS_KEY": "ASIAJAPANCALIFORNIAS"
+        "--SECRET_KEY": "Abab1234569!@#$%^&*(SDFGHJ//-//--//--//"
+        "--S3_BUCKET1": "b1"
+        "--S3_BUCKET2": "b1"
+      GlueVersion: "4.0"
+
+  # 4. Irrelevant Glue Job (Should be skipped by orchestrator)
+  RawInventoryDataJob:
+    Type: AWS::Glue::Job
+    Properties:
+      Name: raw_inventory_data_gluejob
+      Role: !GetAtt GlueExecutionRole.Arn
+      Command:
+        Name: glueetl
+        ScriptLocation: !Sub "s3://${ProjectBucket}/scripts/raw_inventory_data.py"
+      GlueVersion: "4.0"
+
+  Lambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: pooja-test-lambda
+      Handler: index.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: python3.13
+      Timeout: 180 # 3 minutes (Claude needs time to think)
+      MemorySize: 512
+      Environment:
+        Variables:
+          # These allow your code to be dynamic
+          PROJECT_BUCKET: !Ref ProjectBucket
+          CHECKLIST_S3_KEY: "scripts/checklist.md"
+          CLAUDE_MODEL_ID: "anthropic.claude-3-5-sonnet-20240620-v1:0"
+      Code:
+        ZipFile: |
+          import boto3
+          from urllib.parse import urlparse
+          import json
+          import os
+
+          glue = boto3.client("glue")
+          s3 = boto3.client("s3")
+          bedrock = boto3.client("bedrock-runtime")
+
+          def get_file_content(bucket, key):
+              obj = s3.get_object(Bucket=bucket, Key=key)
+              content = obj["Body"].read().decode("utf-8")
+              return content
+
+          def get_glue_job_script(glue_job_name):
+              job = glue.get_job(JobName=glue_job_name)
+              script_location = job["Job"]["Command"]["ScriptLocation"]
+              print(script_location)
+              parsed = urlparse(script_location)
+              return get_file_content(parsed.netloc, parsed.path.lstrip("/"))
+
+          def build_prompt(review_checklist, code_to_review):
+              return f"""
+          You are a senior AWS Data Engineer performing peer review of an AWS Glue Job.
+          Peer review checklist {review_checklist}
+
+          GLUE JOB CODE:
+          {code_to_review}
+
+          TASK:
+          - review the glue job against EACH checklist section
+          - For every checklist point, provide:
+            - Status : PASS or NEEDS IMPROVEMENT
+            - Explanation
+            - Recommendation
+          - Be specific and refer to the code where relevant.
+
+          OUTPUT FORMAT:
+          Return markdown with clear headings matching the checklist sections.
+          """
+
+          def generate_peer_review(prompt, model_id):
+              body_payload = json.dumps({
+                  "anthropic_version": "bedrock-2023-05-31",
+                  "messages": [
+                      {
+                          "role": "user",
+                          "content": [{"type": "text", "text": prompt}]
+                      }
+                  ],
+                  "max_tokens": 5000
+              })
+
+              response = bedrock.invoke_model(
+                  modelId=model_id,
+                  body=body_payload
+              )
+
+              response_body = json.loads(response["body"].read())
+              return response_body["content"][0]["text"]
+
+          def lambda_handler(event, context):
+              checklist_bucket = os.getenv("PROJECT_BUCKET")
+              modelId = os.getenv("CLAUDE_MODEL_ID")
+              checklist_prefix = os.getenv("CHECKLIST_S3_KEY")
+
+              job_name = event.get("gluejob_name")
+              if not job_name:
+                  return {"statusCode": 400, "body": "pass a glue job name"}
+
+              code_to_review = get_glue_job_script(job_name)
+              review_checklist = get_file_content(checklist_bucket, checklist_prefix)
+              prompt = build_prompt(review_checklist, code_to_review)
+              review_output = generate_peer_review(prompt, modelId)
+
+              return {
+                  "statusCode": 200,
+                  "body": {
+                      "job_name": job_name,
+                      "code_length": len(code_to_review),
+                      "review_checklist_length": len(review_checklist),
+                      "peer_review": review_output
+                  }
+              }
+
+  RawCustomerDataCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: raw_customer_data_crawler
+      DatabaseName: test_db
+      TablePrefix: raw_test_
+      SchemaChangePolicy:
+        UpdateBehavior: UPDATE_IN_DATABASE
+        DeleteBehavior: LOG
+      Targets:
+        S3Targets:
+          - Path: !Sub s3://${ProjectBucket}/target_path
+      Role: !GetAtt GlueExecutionRole.Arn
