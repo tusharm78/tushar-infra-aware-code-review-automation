@@ -5,7 +5,7 @@ import os
 import botocore
 
 # Configuration
-STACK_NAME = "pooja-test-stack"
+STACK_NAME = "tushar-test-stack"
 TEMPLATE_FILE = "infra/cloudformation.yml"
 REGION = "us-east-1"  # Change to your region
 
