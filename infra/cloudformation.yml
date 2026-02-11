@@ -7,7 +7,7 @@ Resources:
   LambdaExecutionRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: pooja-test-role
+      RoleName: tushar-test-role
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -47,7 +47,7 @@ Resources:
     Type: AWS::S3::Bucket
     Properties:
       # AWS will generate a unique name if you don't specify one
-      BucketName: !Sub "pc-test-${AWS::AccountId}-${AWS::Region}"
+      BucketName: !Sub "tm-test-${AWS::AccountId}-${AWS::Region}"
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         BlockPublicPolicy: true
@@ -95,7 +95,7 @@ Resources:
   Lambda:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: pooja-test-lambda
+      FunctionName: tushar-test-lambda
       Handler: index.lambda_handler
       Role: !GetAtt LambdaExecutionRole.Arn
       Runtime: python3.13
@@ -132,7 +132,7 @@ Resources:
 
           def build_prompt(review_checklist, code_to_review):
               return f"""
-          You are a senior AWS Data Engineer performing peer review of an AWS Glue Job.
+          You are a Sr AWS Data Engineer performing peer review of an AWS Glue Job.
           Peer review checklist {review_checklist}
 
           GLUE JOB CODE:
