@@ -7,11 +7,11 @@ from pathlib import Path
 
 def get_stack_name(job_name):
     if "customer_data" in job_name:
-        return ("pooja-test-stack", "pooja-test-stack")
+        return ("tushar-test-stack", "tushar-test-stack")
     elif "sales_data" in job_name:
-        return ("pooja-sales-stack", "pooja-sales-stack")
+        return ("tushar-sales-stack", "tushar-sales-stack")
     elif "product_data" in job_name:
-        return ("pooja-product-stack", "pooja-product-stack")
+        return ("tushar-product-stack", "tushar-product-stack")
     return (None, None)
 
 
